@@ -38,3 +38,8 @@
 ```bash
 sudo apt update
 sudo apt install -y x11vnc
+
+sudo mkdir -p /etc/vnc
+sudo x11vnc -storepasswd /etc/vnc/passwd
+sudo chmod 600 /etc/vnc/passwd
+
