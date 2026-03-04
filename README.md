@@ -39,7 +39,9 @@
 sudo apt update
 sudo apt install -y x11vnc
 
+## 2. 设置 VNC 密码
 sudo mkdir -p /etc/vnc
 sudo x11vnc -storepasswd /etc/vnc/passwd
 sudo chmod 600 /etc/vnc/passwd
+
 
