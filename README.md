@@ -323,5 +323,139 @@ sudo systemctl daemon-reload
 sudo apt remove -y x11vnc
 ```
 
+### 13.4操作过程中遇到的小问题
+
+你尝试上传 README 时发现：
+
+SFTP 上传一直 0%
+
+touch /home/sunrise/test_write 报 只读文件系统
+
+findmnt 显示根分区 / 的挂载选项为 ro
+
+一度甚至出现 /usr/bin/sudo: 输入/输出错误
+
+这说明系统把根分区挂成了只读（ro），通常原因是：
+
+ext4 检测到文件系统错误（常见于突然断电）
+
+或底层存储（eMMC/SD）发生 I/O 错误
+Linux 为了保护数据，会把 / 自动 remount 成只读，避免继续写导致更大损坏。
+
+✅ 关键现象：只读时无法写文件、无法上传、无法 git commit、甚至可能连 sudo 都读不出来。
+
+3）为什么“重启后又莫名其妙好了”
+
+你重启后再次检查：
+
+/ 变为 rw
+
+写入测试成功（WRITE_OK）
+
+sudo 恢复正常（SUDO_OK）
+
+这种情况常见：重启时文件系统重新挂载，有时错误没有立刻触发，于是又能正常写入。
+但要注意：这不代表问题彻底消失，如果根因是存储不稳或文件系统有隐患，它可能复发。
+
+这次涉及到的核心知识点
+1）什么是“根分区 / 根文件系统（root filesystem）”
+
+Linux 的所有文件都挂在一个树形目录里，最顶层是 /，叫 根目录。
+
+/ 目录所在的那个分区（例如 /dev/mmcblk1p2）就是 根分区（root partition）。
+
+根分区里通常包含：
+
+/bin /usr/bin（命令，如 sudo、ls）
+
+/etc（配置）
+
+/home（用户目录）
+
+/var（日志/缓存）
+
+以及系统运行所需的大量文件
+
+所以一旦根分区变成只读：
+
+你不仅不能写 /home，很多系统服务也会异常
+
+甚至会出现 “sudo 读不到” 这种 I/O 错误
+
+如何查看根分区是谁
+findmnt -no SOURCE,FSTYPE,OPTIONS /
+
+例：输出 /dev/mmcblk1p2 ext4 rw,relatime
+说明根分区设备是 /dev/mmcblk1p2，文件系统 ext4，当前可写（rw）。
+
+2）rw / ro 是什么
+
+rw：read-write，可读可写（正常状态）
+
+ro：read-only，只读（异常保护状态）
+
+查看挂载状态常用：
+
+mount | grep ' on / '
+findmnt -no TARGET,SOURCE,FSTYPE,OPTIONS
+3）为什么系统会自动变 ro
+
+ext4 或底层存储遇到问题时，内核可能打印日志并把分区 remount 为只读，例如：
+
+EXT4-fs error ...
+
+Buffer I/O error ...
+
+mmc timeout ...
+
+这是保护机制：宁可只读，也不要继续写导致数据结构进一步损坏。
+
+查看内核日志（需要 sudo）：
+
+sudo dmesg -T | egrep -i "ext4|mmc|i/o error|timeout" | tail -n 80
+4）SFTP 上传 0% 卡住的真正原因
+
+当远端目录不可写时（尤其根分区 ro）：
+
+SFTP 仍然能建立连接、列目录
+
+但创建临时文件/写入会失败，表现为“卡住/0%/一直不动”
+
+所以排查上传问题时，第一优先不是网络，而是先测写入：
+
+touch ~/rw_test && echo OK && rm ~/rw_test
+排查与修复方法（这次用到的）
+1）快速确认是否只读
+findmnt -no SOURCE,FSTYPE,OPTIONS /
+touch ~/rw_test && echo WRITE_OK && rm ~/rw_test
+2）尝试临时 remount（不一定成功）
+sudo mount -o remount,rw /
+3）最终修复：fsck（文件系统检查/修复）
+
+如果 ro 反复出现，通常需要 fsck 修复 ext4：
+
+fsck -n：只检查，不修改
+
+fsck -fy：自动修复（风险更大，但常用）
+
+⚠️ 重要：根分区在运行中不适合直接修复，最稳做法是在恢复模式/救援系统下对分区执行：
+
+sudo fsck -fy /dev/mmcblk1p2
+预防建议（非常实用）
+
+尽量不要直接拔电
+突然断电是 ext4 损坏最常见原因。尽量：
+
+sudo shutdown -h now
+
+如果经常断电场景，考虑：
+
+更稳的电源
+
+可靠的 eMMC/SD 卡（劣质卡很容易 I/O error）
+
+关键设备用 UPS 或电源管理
+
+若未来再次出现只读，第一时间保存重要数据，然后安排离线 fsck 或重刷。
 
 
